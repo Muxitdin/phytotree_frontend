@@ -1,13 +1,24 @@
 'use client';
 
-import { useState, use } from 'react';
+import { useState, use, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { Minus, Plus, ShoppingBag, Heart, Share2, Check } from 'lucide-react';
+import { Minus, Plus, ShoppingBag, Heart, Share2, Check, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useProducts } from '@/contexts/ProductsContext';
 import { useCart } from '@/contexts/CartContext';
 import { useI18n } from '@/contexts/I18nContext';
 import { Navbar, Footer } from '@/components/layout';
+import type { Product } from '@/lib/api/types';
+import {
+  getProductName,
+  getProductDescription,
+  getCategoryName,
+  formatPrice,
+  getProductImage,
+  isGradient,
+  type Locale,
+} from '@/lib/product-helpers';
 
 interface ProductPageProps {
   params: Promise<{ id: string }>;
@@ -15,15 +26,40 @@ interface ProductPageProps {
 
 export default function ProductPage({ params }: ProductPageProps) {
   const { id } = use(params);
-  const { getProductById, products } = useProducts();
+  const { getProductBySlug, products } = useProducts();
   const { addToCart, cartItemCount } = useCart();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
+  const [product, setProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [isAddedToCart, setIsAddedToCart] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
-  const product = getProductById(id);
+  // Load product
+  useEffect(() => {
+    const loadProduct = async () => {
+      setIsLoading(true);
+      setSelectedImageIndex(0); // Reset image index when loading new product
+      const fetchedProduct = await getProductBySlug(id);
+      setProduct(fetchedProduct);
+      setIsLoading(false);
+    };
+    loadProduct();
+  }, [id, getProductBySlug]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] flex flex-col">
+        <Navbar cartItemCount={cartItemCount} onCartClick={() => setIsCartOpen(true)} />
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="animate-spin text-[#C4A265]" size={32} />
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   if (!product) {
     return (
@@ -45,17 +81,36 @@ export default function ProductPage({ params }: ProductPageProps) {
     );
   }
 
-  const handleAddToCart = () => {
-    for (let i = 0; i < quantity; i++) {
-      addToCart(product);
-    }
+  const productName = getProductName(product, locale as Locale);
+  const productDescription = getProductDescription(product, locale as Locale);
+  const categoryName = getCategoryName(product.category, locale as Locale);
+  const price = parseFloat(product.price);
+
+  // Image slider logic
+  const images = product.images && product.images.length > 0
+    ? product.images
+    : [getProductImage(product)];
+  const hasMultipleImages = images.length > 1;
+  const currentImage = images[selectedImageIndex] || images[0];
+  const isGradientImage = isGradient(currentImage);
+
+  const goToPrevImage = () => {
+    setSelectedImageIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1));
+  };
+
+  const goToNextImage = () => {
+    setSelectedImageIndex((prev) => (prev === images.length - 1 ? 0 : prev + 1));
+  };
+
+  const handleAddToCart = async () => {
+    await addToCart(product, quantity);
     setIsAddedToCart(true);
     setTimeout(() => setIsAddedToCart(false), 2000);
   };
 
   // Get related products from same category
   const relatedProducts = products
-    .filter((p) => p.category === product.category && p.id !== product.id)
+    .filter((p) => p.category.id === product.category.id && p.id !== product.id)
     .slice(0, 4);
 
   return (
@@ -73,30 +128,114 @@ export default function ProductPage({ params }: ProductPageProps) {
             </li>
             <li className="text-[#2A2A2A]/40">/</li>
             <li>
-              <span className="text-[#2A2A2A]/60">{product.category}</span>
+              <span className="text-[#2A2A2A]/60">{categoryName}</span>
             </li>
             <li className="text-[#2A2A2A]/40">/</li>
             <li>
-              <span className="text-[#2A2A2A]">{product.name}</span>
+              <span className="text-[#2A2A2A]">{productName}</span>
             </li>
           </ol>
         </nav>
 
         {/* Product Details */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-16">
-          {/* Product Image */}
+          {/* Product Images */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
-            className="aspect-square rounded-sm overflow-hidden"
-            style={{ background: product.imageColor }}
+            className="space-y-4"
           >
-            <div className="w-full h-full flex items-center justify-center">
-              <span className="font-serif text-4xl text-white/30">
-                {product.brand.charAt(0)}
-              </span>
+            {/* Main Image */}
+            <div className="aspect-square rounded-sm overflow-hidden relative group">
+              {isGradientImage ? (
+                <div
+                  className="w-full h-full flex items-center justify-center"
+                  style={{ background: currentImage }}
+                >
+                  <span className="font-serif text-4xl text-white/30">
+                    {categoryName.charAt(0)}
+                  </span>
+                </div>
+              ) : (
+                <motion.div
+                  key={selectedImageIndex}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full h-full relative"
+                >
+                  <Image
+                    src={currentImage}
+                    alt={`${productName} - ${selectedImageIndex + 1}`}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    priority
+                  />
+                </motion.div>
+              )}
+
+              {/* Navigation Arrows */}
+              {hasMultipleImages && !isGradientImage && (
+                <>
+                  <button
+                    onClick={goToPrevImage}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 hover:bg-white rounded-full flex items-center justify-center text-[#2A2A2A] shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Previous image"
+                  >
+                    <ChevronLeft size={24} />
+                  </button>
+                  <button
+                    onClick={goToNextImage}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 hover:bg-white rounded-full flex items-center justify-center text-[#2A2A2A] shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Next image"
+                  >
+                    <ChevronRight size={24} />
+                  </button>
+                </>
+              )}
+
+              {/* Image Counter */}
+              {hasMultipleImages && !isGradientImage && (
+                <div className="absolute bottom-3 right-3 bg-[#2A2A2A]/70 text-white text-xs px-2 py-1 rounded">
+                  {selectedImageIndex + 1} / {images.length}
+                </div>
+              )}
+
+              {/* Out of stock badge */}
+              {!product.inStock && (
+                <div className="absolute top-4 left-4 bg-[#2A2A2A]/80 text-white text-sm px-4 py-2">
+                  Out of Stock
+                </div>
+              )}
             </div>
+
+            {/* Thumbnails */}
+            {hasMultipleImages && !isGradientImage && (
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {images.map((img, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setSelectedImageIndex(index)}
+                    className={`relative w-16 h-16 md:w-20 md:h-20 flex-shrink-0 rounded-sm overflow-hidden border-2 transition-all ${
+                      index === selectedImageIndex
+                        ? 'border-[#C4A265] opacity-100'
+                        : 'border-transparent opacity-60 hover:opacity-100'
+                    }`}
+                    aria-label={`View image ${index + 1}`}
+                  >
+                    <Image
+                      src={img}
+                      alt={`${productName} thumbnail ${index + 1}`}
+                      fill
+                      className="object-cover"
+                      sizes="80px"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
           </motion.div>
 
           {/* Product Info */}
@@ -108,27 +247,35 @@ export default function ProductPage({ params }: ProductPageProps) {
           >
             <div className="mb-4">
               <span className="text-sm uppercase tracking-wider text-[#C4A265]">
-                {product.brand}
+                {categoryName}
               </span>
             </div>
 
             <h1 className="font-serif text-3xl md:text-4xl text-[#2A2A2A] mb-4">
-              {product.name}
+              {productName}
             </h1>
 
             <div className="mb-6">
               <span className="text-2xl text-[#2A2A2A]">
-                ${product.price.toFixed(2)}
+                {formatPrice(product.price)}
               </span>
             </div>
 
-            <p className="text-[#2A2A2A]/60 mb-8 leading-relaxed">
-              {t.product.description.replace('{brand}', product.brand)}
-            </p>
+            {productDescription && (
+              <p className="text-[#2A2A2A]/60 mb-8 leading-relaxed">
+                {productDescription}
+              </p>
+            )}
+
+            {!productDescription && (
+              <p className="text-[#2A2A2A]/60 mb-8 leading-relaxed">
+                {t.product.description.replace('{brand}', categoryName)}
+              </p>
+            )}
 
             <div className="mb-6">
               <span className="inline-block px-3 py-1 bg-[#FAF7F2] border border-[#2A2A2A]/10 text-sm text-[#2A2A2A]/80 rounded-sm">
-                {product.category}
+                {categoryName}
               </span>
             </div>
 
@@ -154,7 +301,7 @@ export default function ProductPage({ params }: ProductPageProps) {
                   </button>
                 </div>
                 <span className="text-[#2A2A2A]/60">
-                  {t.common.total}: ${(product.price * quantity).toFixed(2)}
+                  {t.common.total}: {formatPrice(price * quantity)}
                 </span>
               </div>
             </div>
@@ -163,10 +310,12 @@ export default function ProductPage({ params }: ProductPageProps) {
             <div className="flex flex-col sm:flex-row gap-4 mb-8">
               <button
                 onClick={handleAddToCart}
-                disabled={isAddedToCart}
+                disabled={isAddedToCart || !product.inStock}
                 className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm uppercase tracking-widest transition-colors ${
                   isAddedToCart
                     ? 'bg-green-600 text-white'
+                    : !product.inStock
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : 'bg-[#2A2A2A] text-white hover:bg-[#C4A265]'
                 }`}
               >
@@ -223,27 +372,46 @@ export default function ProductPage({ params }: ProductPageProps) {
               {t.product.relatedProducts}
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              {relatedProducts.map((relatedProduct) => (
-                <Link
-                  key={relatedProduct.id}
-                  href={`/product/${relatedProduct.id}`}
-                  className="group"
-                >
-                  <div
-                    className="aspect-square rounded-sm mb-4 transition-transform group-hover:scale-[1.02]"
-                    style={{ background: relatedProduct.imageColor }}
-                  />
-                  <div className="text-xs uppercase tracking-wider text-[#C4A265] mb-1">
-                    {relatedProduct.brand}
-                  </div>
-                  <h3 className="text-sm text-[#2A2A2A] group-hover:text-[#C4A265] transition-colors mb-1">
-                    {relatedProduct.name}
-                  </h3>
-                  <div className="text-sm text-[#2A2A2A]">
-                    ${relatedProduct.price.toFixed(2)}
-                  </div>
-                </Link>
-              ))}
+              {relatedProducts.map((relatedProduct) => {
+                const relatedImage = getProductImage(relatedProduct);
+                const relatedIsGradient = isGradient(relatedImage);
+                const relatedName = getProductName(relatedProduct, locale as Locale);
+                const relatedCategory = getCategoryName(relatedProduct.category, locale as Locale);
+
+                return (
+                  <Link
+                    key={relatedProduct.id}
+                    href={`/product/${relatedProduct.slug}`}
+                    className="group"
+                  >
+                    <div className="aspect-square rounded-sm mb-4 transition-transform group-hover:scale-[1.02] relative overflow-hidden">
+                      {relatedIsGradient ? (
+                        <div
+                          className="w-full h-full"
+                          style={{ background: relatedImage }}
+                        />
+                      ) : (
+                        <Image
+                          src={relatedImage}
+                          alt={relatedName}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 768px) 50vw, 25vw"
+                        />
+                      )}
+                    </div>
+                    <div className="text-xs uppercase tracking-wider text-[#C4A265] mb-1">
+                      {relatedCategory}
+                    </div>
+                    <h3 className="text-sm text-[#2A2A2A] group-hover:text-[#C4A265] transition-colors mb-1">
+                      {relatedName}
+                    </h3>
+                    <div className="text-sm text-[#2A2A2A]">
+                      {formatPrice(relatedProduct.price)}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </section>
         )}

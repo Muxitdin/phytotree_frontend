@@ -1,56 +1,117 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, ArrowLeft, Loader2 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import { ArrowLeft, Loader2, RefreshCw, CheckCircle, Send, Shield } from 'lucide-react';
+import { useAuth, getTelegramQRCodeUrl } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
+
+type LoginState = 'idle' | 'loading' | 'waiting' | 'success' | 'error' | 'expired';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isAuthenticated } = useAuth();
+  const { isAuthenticated, initTelegramLogin, checkAuthStatus } = useAuth();
   const { t } = useI18n();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [state, setState] = useState<LoginState>('idle');
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [deepLink, setDeepLink] = useState<string | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push('/');
+    }
+  }, [isAuthenticated, router]);
+
+  // Initialize Telegram login
+  const initLogin = useCallback(async () => {
+    setState('loading');
+    setError(null);
+
+    try {
+      const response = await initTelegramLogin();
+      setAuthToken(response.authToken);
+      setDeepLink(response.deepLink);
+      setQrCodeUrl(getTelegramQRCodeUrl(response.deepLink));
+      setExpiresAt(Date.now() + response.expiresIn * 1000);
+      setState('waiting');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.auth.loginError);
+      setState('error');
+    }
+  }, [initTelegramLogin, t.auth.loginError]);
+
+  // Start login on mount
+  useEffect(() => {
+    if (state === 'idle' && !isAuthenticated) {
+      initLogin();
+    }
+  }, [state, isAuthenticated, initLogin]);
+
+  // Poll for auth confirmation
+  useEffect(() => {
+    if (state !== 'waiting' || !authToken) return;
+
+    const pollInterval = setInterval(async () => {
+      const confirmed = await checkAuthStatus(authToken);
+      if (confirmed) {
+        setState('success');
+        clearInterval(pollInterval);
+        // Redirect after short delay
+        setTimeout(() => {
+          router.push('/');
+        }, 1500);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [state, authToken, checkAuthStatus, router]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (!expiresAt || state !== 'waiting') return;
+
+    const updateTimer = () => {
+      const remaining = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+      setTimeLeft(remaining);
+
+      if (remaining === 0) {
+        setState('expired');
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [expiresAt, state]);
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleRetry = () => {
+    setAuthToken(null);
+    setDeepLink(null);
+    setQrCodeUrl(null);
+    setExpiresAt(null);
+    setTimeLeft(null);
+    initLogin();
+  };
+
   if (isAuthenticated) {
-    router.push('/');
     return null;
   }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (!email.trim()) {
-      setError(t.auth.enterEmail);
-      return;
-    }
-
-    if (!password) {
-      setError(t.auth.enterPassword);
-      return;
-    }
-
-    setIsLoading(true);
-
-    const result = await login(email, password);
-
-    if (result.success) {
-      router.push('/');
-    } else {
-      setError(t.auth.invalidCredentials);
-    }
-
-    setIsLoading(false);
-  };
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -75,10 +136,7 @@ export default function LoginPage() {
           {t.auth.loginTitle}
         </h2>
         <p className="mt-2 text-center text-sm text-[#2A2A2A]/60">
-          {t.auth.noAccount}{' '}
-          <Link href="/register" className="text-[#C4A265] hover:underline">
-            {t.auth.register}
-          </Link>
+          {t.auth.loginSubtitle}
         </p>
       </motion.div>
 
@@ -89,99 +147,128 @@ export default function LoginPage() {
         className="mt-8 sm:mx-auto sm:w-full sm:max-w-md"
       >
         <div className="bg-white py-8 px-4 shadow-sm border border-[#2A2A2A]/10 sm:rounded-sm sm:px-10">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {error && (
+          {/* Loading state */}
+          {state === 'loading' && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Loader2 className="animate-spin text-[#C4A265]" size={40} />
+              <p className="mt-4 text-[#2A2A2A]/60">{t.common.loading}</p>
+            </div>
+          )}
+
+          {/* Waiting for confirmation */}
+          {state === 'waiting' && qrCodeUrl && deepLink && (
+            <div className="flex flex-col items-center">
+              {/* QR Code */}
+              <div className="relative">
+                <div className="bg-white p-4 rounded-lg border-2 border-[#2A2A2A]/10">
+                  <Image
+                    src={qrCodeUrl}
+                    alt="Telegram QR Code"
+                    width={200}
+                    height={200}
+                    className="rounded"
+                    unoptimized
+                  />
+                </div>
+                <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 bg-[#C4A265] text-white text-xs px-3 py-1 rounded-full">
+                  {t.auth.scanQrCode}
+                </div>
+              </div>
+
+              <p className="mt-6 text-sm text-[#2A2A2A]/60 text-center">
+                {t.auth.orClickButton}
+              </p>
+
+              {/* Open Telegram button */}
+              <a
+                href={deepLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent text-sm font-medium uppercase tracking-wider text-white bg-[#0088cc] hover:bg-[#0077b5] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0088cc] transition-colors"
+              >
+                <Send size={18} />
+                {t.auth.openTelegram}
+              </a>
+
+              {/* Waiting indicator */}
+              <div className="mt-6 flex items-center gap-2 text-[#2A2A2A]/60">
+                <Loader2 className="animate-spin" size={16} />
+                <span className="text-sm">{t.auth.waitingConfirmation}</span>
+              </div>
+
+              <p className="mt-2 text-xs text-[#2A2A2A]/40 text-center">
+                {t.auth.confirmInTelegram}
+              </p>
+
+              {/* Timer */}
+              {timeLeft !== null && (
+                <div className="mt-4 text-sm text-[#2A2A2A]/40">
+                  {formatTime(timeLeft)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Success state */}
+          {state === 'success' && (
+            <div className="flex flex-col items-center justify-center py-8">
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-sm text-sm"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 200 }}
               >
-                {error}
+                <CheckCircle className="text-green-500" size={60} />
               </motion.div>
-            )}
-
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-[#2A2A2A] uppercase tracking-wider"
-              >
-                {t.auth.email}
-              </label>
-              <div className="mt-1">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="appearance-none block w-full px-3 py-3 border border-[#2A2A2A]/20 bg-transparent placeholder-[#2A2A2A]/40 text-[#2A2A2A] focus:outline-none focus:ring-1 focus:ring-[#C4A265] focus:border-[#C4A265] transition-colors"
-                  placeholder="example@email.com"
-                />
-              </div>
+              <p className="mt-4 text-lg font-medium text-[#2A2A2A]">
+                {t.auth.loginSuccess}
+              </p>
+              <p className="mt-2 text-sm text-[#2A2A2A]/60">
+                {t.auth.redirecting}
+              </p>
             </div>
+          )}
 
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-[#2A2A2A] uppercase tracking-wider"
-              >
-                {t.auth.password}
-              </label>
-              <div className="mt-1 relative">
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none block w-full px-3 py-3 pr-10 border border-[#2A2A2A]/20 bg-transparent placeholder-[#2A2A2A]/40 text-[#2A2A2A] focus:outline-none focus:ring-1 focus:ring-[#C4A265] focus:border-[#C4A265] transition-colors"
-                  placeholder={t.auth.enterPassword}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#2A2A2A]/40 hover:text-[#2A2A2A]"
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
+          {/* Error state */}
+          {state === 'error' && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-sm text-sm w-full text-center">
+                {error || t.auth.loginError}
               </div>
-            </div>
-
-            <div>
               <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full flex justify-center items-center py-3 px-4 border border-transparent text-sm font-medium uppercase tracking-wider text-white bg-[#2A2A2A] hover:bg-[#C4A265] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C4A265] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleRetry}
+                className="mt-6 flex items-center gap-2 text-[#C4A265] hover:text-[#2A2A2A] transition-colors"
               >
-                {isLoading ? (
-                  <Loader2 className="animate-spin" size={20} />
-                ) : (
-                  t.auth.login
-                )}
+                <RefreshCw size={18} />
+                {t.auth.tryAgain}
               </button>
             </div>
-          </form>
+          )}
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-[#2A2A2A]/10" />
+          {/* Expired state */}
+          {state === 'expired' && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-sm text-sm w-full text-center">
+                {t.auth.loginExpired}
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-[#2A2A2A]/40">
-                  {t.auth.testAdmin}
-                </span>
-              </div>
+              <button
+                onClick={handleRetry}
+                className="mt-6 flex items-center gap-2 py-3 px-6 text-sm font-medium uppercase tracking-wider text-white bg-[#2A2A2A] hover:bg-[#C4A265] transition-colors"
+              >
+                <RefreshCw size={18} />
+                {t.auth.tryAgain}
+              </button>
             </div>
+          )}
 
-            <div className="mt-4 text-center text-sm text-[#2A2A2A]/60">
-              <p>Email: admin@phytotree.com</p>
-              <p>Password: admin123</p>
+          {/* Security note */}
+          <div className="mt-8 pt-6 border-t border-[#2A2A2A]/10">
+            <div className="flex items-center justify-center gap-2 text-xs text-[#2A2A2A]/40">
+              <Shield size={14} />
+              <span>{t.auth.secureLogin}</span>
             </div>
+            <p className="mt-1 text-center text-xs text-[#2A2A2A]/30">
+              {t.auth.noDataShared}
+            </p>
           </div>
         </div>
       </motion.div>

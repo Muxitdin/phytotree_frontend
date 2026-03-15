@@ -5,149 +5,149 @@ import {
   useContext,
   useState,
   useEffect,
+  useCallback,
   ReactNode,
 } from 'react';
-import { User, UserRole } from '@/lib/types';
-
-interface StoredUser extends User {
-  password: string;
-}
+import { authApi, setAccessToken } from '@/lib/api';
+import type { User, AuthInitResponse } from '@/lib/api/types';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
+
+  // Telegram auth flow
+  initTelegramLogin: () => Promise<AuthInitResponse>;
+  checkAuthStatus: (authToken: string) => Promise<boolean>;
+  finalizeTelegramLogin: (authToken: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Session management
+  logout: () => Promise<void>;
+  logoutAllDevices: () => Promise<{ sessionsInvalidated: number }>;
+
+  // Refresh user data
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const USERS_STORAGE_KEY = 'phytotree-users';
-const SESSION_STORAGE_KEY = 'phytotree-session';
-
-// Default admin account
-const DEFAULT_ADMIN: StoredUser = {
-  id: 'admin-1',
-  email: 'admin@phytotree.com',
-  name: 'Admin',
-  role: 'admin',
-  password: 'admin123',
-};
-
-function getStoredUsers(): StoredUser[] {
-  if (typeof window === 'undefined') return [DEFAULT_ADMIN];
-
-  const stored = localStorage.getItem(USERS_STORAGE_KEY);
-  if (!stored) {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify([DEFAULT_ADMIN]));
-    return [DEFAULT_ADMIN];
-  }
-
-  const users = JSON.parse(stored);
-  // Ensure admin exists
-  if (!users.find((u: StoredUser) => u.email === DEFAULT_ADMIN.email)) {
-    users.push(DEFAULT_ADMIN);
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-  }
-
-  return users;
-}
-
-function saveUsers(users: StoredUser[]): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-}
-
-function getSession(): User | null {
-  if (typeof window === 'undefined') return null;
-  const stored = localStorage.getItem(SESSION_STORAGE_KEY);
-  return stored ? JSON.parse(stored) : null;
-}
-
-function saveSession(user: User | null): void {
-  if (typeof window === 'undefined') return;
-  if (user) {
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user));
-  } else {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-  }
-}
+const TELEGRAM_BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || '';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Try to restore session on mount
   useEffect(() => {
-    // Restore session on mount
-    const session = getSession();
-    setUser(session);
-    setIsLoading(false);
-  }, []);
+    const restoreSession = async () => {
+      try {
+        // Try to refresh token (stored in httpOnly cookie)
+        const refreshResult = await authApi.refresh();
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    const users = getStoredUsers();
-    const foundUser = users.find(
-      (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-    );
-
-    if (!foundUser) {
-      return { success: false, error: 'Неверный email или пароль' };
-    }
-
-    const { password: _, ...userWithoutPassword } = foundUser;
-    setUser(userWithoutPassword);
-    saveSession(userWithoutPassword);
-
-    return { success: true };
-  };
-
-  const register = async (
-    email: string,
-    password: string,
-    name: string
-  ): Promise<{ success: boolean; error?: string }> => {
-    const users = getStoredUsers();
-
-    if (users.find((u) => u.email.toLowerCase() === email.toLowerCase())) {
-      return { success: false, error: 'Пользователь с таким email уже существует' };
-    }
-
-    const newUser: StoredUser = {
-      id: `user-${Date.now()}`,
-      email,
-      name,
-      role: 'user' as UserRole,
-      password,
+        if (refreshResult) {
+          // Token refreshed, get user data
+          const userData = await authApi.me();
+          setUser(userData);
+        }
+      } catch {
+        // No valid session, user needs to log in
+        setUser(null);
+        setAccessToken(null);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    users.push(newUser);
-    saveUsers(users);
+    restoreSession();
+  }, []);
 
-    const { password: _, ...userWithoutPassword } = newUser;
-    setUser(userWithoutPassword);
-    saveSession(userWithoutPassword);
+  /**
+   * Initialize Telegram login flow
+   * Returns authToken and deepLink for QR code or button
+   */
+  const initTelegramLogin = useCallback(async (): Promise<AuthInitResponse> => {
+    const response = await authApi.init();
+    return response;
+  }, []);
 
-    return { success: true };
-  };
+  /**
+   * Check if user has confirmed auth in Telegram
+   * Used for polling while waiting for confirmation
+   */
+  const checkAuthStatus = useCallback(async (authToken: string): Promise<boolean> => {
+    try {
+      // Try to finalize - if user confirmed, this will succeed
+      const response = await authApi.finalize(authToken);
+      setUser(response.user);
+      return true;
+    } catch {
+      // Not confirmed yet or expired
+      return false;
+    }
+  }, []);
 
-  const logout = () => {
+  /**
+   * Finalize Telegram login after user confirms
+   */
+  const finalizeTelegramLogin = useCallback(async (
+    authToken: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const response = await authApi.finalize(authToken);
+      setUser(response.user);
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to complete login';
+      return { success: false, error: message };
+    }
+  }, []);
+
+  /**
+   * Logout from current device
+   */
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      setUser(null);
+    }
+  }, []);
+
+  /**
+   * Logout from all devices
+   */
+  const logoutAllDevices = useCallback(async () => {
+    const result = await authApi.logoutAll();
     setUser(null);
-    saveSession(null);
-  };
+    return result;
+  }, []);
+
+  /**
+   * Refresh user data from server
+   */
+  const refreshUser = useCallback(async () => {
+    try {
+      const userData = await authApi.me();
+      setUser(userData);
+    } catch {
+      setUser(null);
+    }
+  }, []);
 
   return (
     <AuthContext.Provider
       value={{
         user,
         isLoading,
-        login,
-        register,
-        logout,
         isAuthenticated: !!user,
-        isAdmin: user?.role === 'admin',
+        isAdmin: user?.role === 'ADMIN',
+        initTelegramLogin,
+        checkAuthStatus,
+        finalizeTelegramLogin,
+        logout,
+        logoutAllDevices,
+        refreshUser,
       }}
     >
       {children}
@@ -161,4 +161,18 @@ export function useAuth() {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+}
+
+/**
+ * Generate Telegram deep link for login
+ */
+export function getTelegramDeepLink(authToken: string): string {
+  return `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${authToken}`;
+}
+
+/**
+ * Generate Telegram QR code URL (using QR code API)
+ */
+export function getTelegramQRCodeUrl(deepLink: string): string {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(deepLink)}`;
 }

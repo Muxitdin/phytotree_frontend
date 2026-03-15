@@ -50,26 +50,23 @@ export const ru = {
   // Auth
   auth: {
     login: 'Войти',
-    register: 'Регистрация',
     logout: 'Выйти',
-    email: 'Email',
-    password: 'Пароль',
-    confirmPassword: 'Подтвердите пароль',
-    name: 'Имя',
     loginTitle: 'Вход в аккаунт',
-    registerTitle: 'Создать аккаунт',
-    noAccount: 'Ещё нет аккаунта?',
-    hasAccount: 'Уже есть аккаунт?',
-    testAdmin: 'Тестовый аккаунт администратора',
-    enterName: 'Введите ваше имя',
-    enterEmail: 'Введите email',
-    enterPassword: 'Введите пароль',
-    minPassword: 'Минимум 6 символов',
-    repeatPassword: 'Повторите пароль',
-    passwordMismatch: 'Пароли не совпадают',
-    invalidCredentials: 'Неверный email или пароль',
-    emailExists: 'Пользователь с таким email уже существует',
+    loginSubtitle: 'Войдите через Telegram для доступа к вашему аккаунту',
+    telegramLogin: 'Войти через Telegram',
+    openTelegram: 'Открыть Telegram',
+    scanQrCode: 'Отсканируйте QR-код',
+    orClickButton: 'или нажмите кнопку ниже',
+    waitingConfirmation: 'Ожидание подтверждения...',
+    confirmInTelegram: 'Подтвердите вход в Telegram боте',
+    loginExpired: 'Время сессии истекло',
+    tryAgain: 'Попробовать снова',
+    loginError: 'Ошибка входа',
+    loginSuccess: 'Вход выполнен!',
+    redirecting: 'Перенаправление...',
     administrator: 'Администратор',
+    secureLogin: 'Безопасный вход через Telegram',
+    noDataShared: 'Мы не храним ваш пароль',
   },
 
   // Cart
@@ -200,6 +197,179 @@ export const ru = {
   userMenu: {
     myOrders: 'Мои заказы',
   },
-} as const;
+};
 
-export type Dictionary = typeof ru;
+// Dictionary type with string values instead of literal types
+export interface Dictionary {
+  common: {
+    backToShop: string;
+    loading: string;
+    save: string;
+    cancel: string;
+    delete: string;
+    edit: string;
+    add: string;
+    search: string;
+    all: string;
+    free: string;
+    total: string;
+    subtotal: string;
+    shipping: string;
+    quantity: string;
+    price: string;
+    category: string;
+    actions: string;
+    product: string;
+    products: string;
+    confirmDelete: string;
+    deleteWarning: string;
+  };
+  nav: {
+    shopAll: string;
+    skincare: string;
+    makeup: string;
+    fragrance: string;
+    hairCare: string;
+    bodyCare: string;
+    toolsAccessories: string;
+    adminPanel: string;
+  };
+  categories: {
+    all: string;
+    skincare: string;
+    makeup: string;
+    fragrance: string;
+    hairCare: string;
+    bodyCare: string;
+    toolsAccessories: string;
+  };
+  auth: {
+    login: string;
+    logout: string;
+    loginTitle: string;
+    loginSubtitle: string;
+    telegramLogin: string;
+    openTelegram: string;
+    scanQrCode: string;
+    orClickButton: string;
+    waitingConfirmation: string;
+    confirmInTelegram: string;
+    loginExpired: string;
+    tryAgain: string;
+    loginError: string;
+    loginSuccess: string;
+    redirecting: string;
+    administrator: string;
+    secureLogin: string;
+    noDataShared: string;
+  };
+  cart: {
+    title: string;
+    empty: string;
+    continueShopping: string;
+    checkout: string;
+    addToCart: string;
+    added: string;
+    freeShippingNote: string;
+  };
+  product: {
+    notFound: string;
+    brand: string;
+    name: string;
+    description: string;
+    relatedProducts: string;
+    features: {
+      freeShipping: string;
+      returns: string;
+      quality: string;
+      securePayment: string;
+    };
+    imageColor: string;
+  };
+  filters: {
+    categories: string;
+    priceRange: string;
+    minPrice: string;
+    maxPrice: string;
+  };
+  pagination: {
+    previous: string;
+    next: string;
+    page: string;
+    of: string;
+  };
+  admin: {
+    title: string;
+    addProduct: string;
+    editProduct: string;
+    newProduct: string;
+    productManagement: string;
+    totalProducts: string;
+    totalCategories: string;
+    totalValue: string;
+    noProducts: string;
+    addFirstProduct: string;
+    createProduct: string;
+    saveChanges: string;
+  };
+  checkout: {
+    title: string;
+    shippingDetails: string;
+    yourOrder: string;
+    fullName: string;
+    phone: string;
+    address: string;
+    city: string;
+    postalCode: string;
+    placeOrder: string;
+    processing: string;
+    orderSuccess: string;
+    orderNumber: string;
+    confirmationSent: string;
+    validation: {
+      enterName: string;
+      enterPhone: string;
+      enterAddress: string;
+      enterCity: string;
+      enterPostalCode: string;
+    };
+  };
+  orders: {
+    title: string;
+    empty: string;
+    emptyDescription: string;
+    goToShop: string;
+    orderNumber: string;
+    orderDetails: string;
+    shippingAddress: string;
+    item: string;
+    items: string;
+    status: {
+      pending: string;
+      processing: string;
+      shipped: string;
+      delivered: string;
+      cancelled: string;
+    };
+  };
+  hero: {
+    title: string;
+    subtitle: string;
+    description: string;
+    shopNow: string;
+  };
+  footer: {
+    description: string;
+    shop: string;
+    help: string;
+    contact: string;
+    about: string;
+    faq: string;
+    shippingReturns: string;
+    privacyPolicy: string;
+    allRightsReserved: string;
+  };
+  userMenu: {
+    myOrders: string;
+  };
+}

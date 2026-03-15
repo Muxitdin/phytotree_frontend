@@ -133,10 +133,18 @@ export function Navbar({
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                 className="text-[#2A2A2A] hover:text-[#C4A265] transition-colors flex items-center gap-2"
               >
-                <User size={20} strokeWidth={1.5} />
+                {isAuthenticated && user?.photoUrl ? (
+                  <img
+                    src={user.photoUrl}
+                    alt={user.firstName || 'User'}
+                    className="w-6 h-6 rounded-full object-cover"
+                  />
+                ) : (
+                  <User size={20} strokeWidth={1.5} />
+                )}
                 {isAuthenticated && (
                   <span className="hidden sm:block text-sm">
-                    {user?.name}
+                    {user?.firstName || user?.username || 'User'}
                   </span>
                 )}
               </button>
@@ -160,8 +168,12 @@ export function Navbar({
                         <div className="py-2">
                           {/* User Info */}
                           <div className="px-4 py-3 border-b border-[#2A2A2A]/10">
-                            <p className="text-sm font-medium text-[#2A2A2A]">{user?.name}</p>
-                            <p className="text-xs text-[#2A2A2A]/60">{user?.email}</p>
+                            <p className="text-sm font-medium text-[#2A2A2A]">
+                              {[user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.username || 'User'}
+                            </p>
+                            {user?.username && (
+                              <p className="text-xs text-[#2A2A2A]/60">@{user.username}</p>
+                            )}
                             {isAdmin && (
                               <span className="inline-block mt-1 px-2 py-0.5 bg-[#C4A265]/10 text-[#C4A265] text-xs rounded-sm">
                                 {t.auth.administrator}
@@ -206,13 +218,6 @@ export function Navbar({
                             className="block px-4 py-2 text-sm text-[#2A2A2A] hover:bg-[#FAF7F2] hover:text-[#C4A265]"
                           >
                             {t.auth.login}
-                          </Link>
-                          <Link
-                            href="/register"
-                            onClick={() => setIsUserMenuOpen(false)}
-                            className="block px-4 py-2 text-sm text-[#2A2A2A] hover:bg-[#FAF7F2] hover:text-[#C4A265]"
-                          >
-                            {t.auth.register}
                           </Link>
                         </div>
                       )}

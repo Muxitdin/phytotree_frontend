@@ -3,33 +3,41 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Package, Loader2, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Package, Loader2, ChevronRight, CreditCard } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrders } from '@/contexts/OrdersContext';
 import { useI18n } from '@/contexts/I18nContext';
-import { OrderStatus } from '@/lib/types';
+import type { OrderStatus, Order } from '@/lib/api/types';
+import { formatPrice, getProductImage, isGradient } from '@/lib/product-helpers';
 
 const STATUS_COLORS: Record<OrderStatus, string> = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  processing: 'bg-blue-100 text-blue-800',
-  shipped: 'bg-purple-100 text-purple-800',
-  delivered: 'bg-green-100 text-green-800',
-  cancelled: 'bg-red-100 text-red-800',
+  PENDING: 'bg-yellow-100 text-yellow-800',
+  AWAITING_PAYMENT: 'bg-orange-100 text-orange-800',
+  PAID: 'bg-green-100 text-green-800',
+  PROCESSING: 'bg-blue-100 text-blue-800',
+  SHIPPED: 'bg-purple-100 text-purple-800',
+  DELIVERED: 'bg-green-100 text-green-800',
+  CANCELLED: 'bg-red-100 text-red-800',
+  REFUNDED: 'bg-gray-100 text-gray-800',
 };
 
 export default function OrdersPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const { userOrders } = useOrders();
+  const { orders, isLoading: ordersLoading, hasMore, loadMore, getClickPaymentUrl } = useOrders();
   const { t, locale } = useI18n();
 
   const STATUS_LABELS: Record<OrderStatus, string> = {
-    pending: t.orders.status.pending,
-    processing: t.orders.status.processing,
-    shipped: t.orders.status.shipped,
-    delivered: t.orders.status.delivered,
-    cancelled: t.orders.status.cancelled,
+    PENDING: t.orders.status.pending,
+    AWAITING_PAYMENT: 'Awaiting Payment',
+    PAID: 'Paid',
+    PROCESSING: t.orders.status.processing,
+    SHIPPED: t.orders.status.shipped,
+    DELIVERED: t.orders.status.delivered,
+    CANCELLED: t.orders.status.cancelled,
+    REFUNDED: 'Refunded',
   };
 
   function formatDate(dateString: string): string {
@@ -48,13 +56,22 @@ export default function OrdersPage() {
     });
   }
 
+  const handlePayOrder = async (orderId: string) => {
+    try {
+      const response = await getClickPaymentUrl(orderId);
+      window.location.href = response.paymentUrl;
+    } catch (err) {
+      console.error('Failed to get payment URL:', err);
+    }
+  };
+
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       router.push('/login?redirect=/orders');
     }
   }, [authLoading, isAuthenticated, router]);
 
-  if (authLoading) {
+  if (authLoading || ordersLoading) {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
         <Loader2 className="animate-spin text-[#C4A265]" size={32} />
@@ -86,7 +103,7 @@ export default function OrdersPage() {
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <h1 className="font-serif text-3xl text-[#2A2A2A] mb-8">{t.orders.title}</h1>
 
-        {userOrders.length === 0 ? (
+        {orders.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -108,7 +125,7 @@ export default function OrdersPage() {
           </motion.div>
         ) : (
           <div className="space-y-6">
-            {userOrders.map((order, index) => (
+            {orders.map((order, index) => (
               <motion.div
                 key={order.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -121,7 +138,7 @@ export default function OrdersPage() {
                   <div>
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="font-medium text-[#2A2A2A]">
-                        {t.orders.orderNumber} #{order.id.replace('order-', '')}
+                        {t.orders.orderNumber} #{order.orderNumber}
                       </h3>
                       <span
                         className={`px-2 py-0.5 rounded-sm text-xs font-medium ${
@@ -137,7 +154,7 @@ export default function OrdersPage() {
                   </div>
                   <div className="text-right">
                     <p className="font-serif text-xl text-[#2A2A2A]">
-                      ${order.total.toFixed(2)}
+                      {formatPrice(order.totalAmount)}
                     </p>
                     <p className="text-sm text-[#2A2A2A]/60">
                       {order.items.length} {order.items.length === 1 ? t.orders.item : t.orders.items}
@@ -148,14 +165,33 @@ export default function OrdersPage() {
                 {/* Order Items Preview */}
                 <div className="p-6">
                   <div className="flex flex-wrap gap-4 mb-4">
-                    {order.items.slice(0, 4).map((item, itemIndex) => (
-                      <div
-                        key={itemIndex}
-                        className="w-16 h-16 rounded-sm"
-                        style={{ background: item.imageColor }}
-                        title={`${item.productBrand} - ${item.productName}`}
-                      />
-                    ))}
+                    {order.items.slice(0, 4).map((item, itemIndex) => {
+                      const image = item.product?.images?.[0] || 'linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%)';
+                      const isGradientImg = isGradient(image);
+
+                      return (
+                        <div
+                          key={itemIndex}
+                          className="w-16 h-16 rounded-sm relative overflow-hidden"
+                          title={item.productName}
+                        >
+                          {isGradientImg ? (
+                            <div
+                              className="w-full h-full"
+                              style={{ background: image }}
+                            />
+                          ) : (
+                            <Image
+                              src={image}
+                              alt={item.productName}
+                              fill
+                              className="object-cover"
+                              sizes="64px"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                     {order.items.length > 4 && (
                       <div className="w-16 h-16 rounded-sm bg-[#FAF7F2] flex items-center justify-center text-sm text-[#2A2A2A]/60">
                         +{order.items.length - 4}
@@ -167,13 +203,26 @@ export default function OrdersPage() {
                   <div className="text-sm text-[#2A2A2A]/60">
                     <p className="font-medium text-[#2A2A2A]">{t.orders.shippingAddress}:</p>
                     <p>
-                      {order.shippingAddress.fullName}, {order.shippingAddress.phone}
+                      {order.customerName}, {order.customerPhone}
                     </p>
-                    <p>
-                      {order.shippingAddress.address}, {order.shippingAddress.city},{' '}
-                      {order.shippingAddress.postalCode}
-                    </p>
+                    {order.shippingAddress && (
+                      <p>
+                        {order.shippingAddress}
+                        {order.shippingCity && `, ${order.shippingCity}`}
+                      </p>
+                    )}
                   </div>
+
+                  {/* Pay Now Button for unpaid orders */}
+                  {(order.status === 'PENDING' || order.status === 'AWAITING_PAYMENT') && (
+                    <button
+                      onClick={() => handlePayOrder(order.id)}
+                      className="mt-4 bg-[#C4A265] text-white px-6 py-2 uppercase tracking-wider text-sm hover:bg-[#b08d55] transition-colors flex items-center gap-2"
+                    >
+                      <CreditCard size={16} />
+                      Pay Now
+                    </button>
+                  )}
                 </div>
 
                 {/* Order Details Accordion */}
@@ -192,50 +241,98 @@ export default function OrdersPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {order.items.map((item, itemIndex) => (
-                          <tr key={itemIndex} className="border-b border-[#2A2A2A]/5">
-                            <td className="py-3">
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className="w-10 h-10 rounded-sm flex-shrink-0"
-                                  style={{ background: item.imageColor }}
-                                />
-                                <div>
-                                  <p className="text-[#2A2A2A]">{item.productName}</p>
-                                  <p className="text-xs text-[#2A2A2A]/60">{item.productBrand}</p>
+                        {order.items.map((item, itemIndex) => {
+                          const image = item.product?.images?.[0] || 'linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%)';
+                          const isGradientImg = isGradient(image);
+
+                          return (
+                            <tr key={itemIndex} className="border-b border-[#2A2A2A]/5">
+                              <td className="py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-sm flex-shrink-0 relative overflow-hidden">
+                                    {isGradientImg ? (
+                                      <div
+                                        className="w-full h-full"
+                                        style={{ background: image }}
+                                      />
+                                    ) : (
+                                      <Image
+                                        src={image}
+                                        alt={item.productName}
+                                        fill
+                                        className="object-cover"
+                                        sizes="40px"
+                                      />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className="text-[#2A2A2A]">{item.productName}</p>
+                                    <p className="text-xs text-[#2A2A2A]/60">
+                                      {formatPrice(item.productPrice)} each
+                                    </p>
+                                  </div>
                                 </div>
-                              </div>
-                            </td>
-                            <td className="py-3 text-center text-[#2A2A2A]">
-                              {item.quantity}
-                            </td>
-                            <td className="py-3 text-right text-[#2A2A2A]">
-                              ${(item.price * item.quantity).toFixed(2)}
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                              <td className="py-3 text-center text-[#2A2A2A]">
+                                {item.quantity}
+                              </td>
+                              <td className="py-3 text-right text-[#2A2A2A]">
+                                {formatPrice(item.totalPrice)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       <tfoot>
                         <tr className="border-t border-[#2A2A2A]/10">
                           <td colSpan={2} className="py-2 text-[#2A2A2A]/60">{t.common.subtotal}</td>
-                          <td className="py-2 text-right">${order.subtotal.toFixed(2)}</td>
+                          <td className="py-2 text-right">{formatPrice(order.subtotal)}</td>
                         </tr>
                         <tr>
                           <td colSpan={2} className="py-2 text-[#2A2A2A]/60">{t.common.shipping}</td>
                           <td className="py-2 text-right">
-                            {order.shipping === 0 ? t.common.free : `$${order.shipping.toFixed(2)}`}
+                            {parseFloat(order.shippingCost) === 0 ? t.common.free : formatPrice(order.shippingCost)}
                           </td>
                         </tr>
                         <tr className="font-medium">
                           <td colSpan={2} className="py-2 text-[#2A2A2A]">{t.common.total}</td>
-                          <td className="py-2 text-right text-[#2A2A2A]">${order.total.toFixed(2)}</td>
+                          <td className="py-2 text-right text-[#2A2A2A]">{formatPrice(order.totalAmount)}</td>
                         </tr>
                       </tfoot>
                     </table>
+
+                    {/* Payment info */}
+                    {order.payments && order.payments.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-[#2A2A2A]/10">
+                        <h4 className="text-sm font-medium text-[#2A2A2A] mb-2">Payment History</h4>
+                        {order.payments.map((payment, idx) => (
+                          <div key={idx} className="text-sm text-[#2A2A2A]/60 flex justify-between">
+                            <span>{payment.provider} - {payment.status}</span>
+                            <span>{formatPrice(payment.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </details>
               </motion.div>
             ))}
+
+            {/* Load More */}
+            {hasMore && (
+              <div className="text-center">
+                <button
+                  onClick={loadMore}
+                  disabled={ordersLoading}
+                  className="px-8 py-3 border border-[#2A2A2A] text-[#2A2A2A] uppercase tracking-widest text-sm hover:bg-[#2A2A2A] hover:text-white transition-colors disabled:opacity-50"
+                >
+                  {ordersLoading ? (
+                    <Loader2 className="animate-spin inline mr-2" size={16} />
+                  ) : null}
+                  Load More
+                </button>
+              </div>
+            )}
           </div>
         )}
       </main>

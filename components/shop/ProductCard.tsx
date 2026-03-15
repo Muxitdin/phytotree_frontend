@@ -2,9 +2,18 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Product } from '@/lib/types';
+import type { Product } from '@/lib/api/types';
 import { useI18n } from '@/contexts/I18nContext';
+import {
+  getProductName,
+  getCategoryName,
+  formatPrice,
+  getProductImage,
+  isGradient,
+  type Locale,
+} from '@/lib/product-helpers';
 
 interface ProductCardProps {
   product: Product;
@@ -14,13 +23,18 @@ interface ProductCardProps {
 
 export function ProductCard({ product, onAddToCart, index }: ProductCardProps) {
   const [isHovered, setIsHovered] = useState(false);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     onAddToCart(product);
   };
+
+  const productName = getProductName(product, locale as Locale);
+  const categoryName = getCategoryName(product.category, locale as Locale);
+  const productImage = getProductImage(product);
+  const isGradientImage = isGradient(productImage);
 
   return (
     <motion.div
@@ -31,17 +45,34 @@ export function ProductCard({ product, onAddToCart, index }: ProductCardProps) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <Link href={`/product/${product.id}`} className="block">
+      <Link href={`/product/${product.slug}`} className="block">
         {/* Image Container */}
         <div className="relative aspect-[3/4] overflow-hidden bg-[#F5F5F5] mb-4">
-          <div
-            className="w-full h-full transition-transform duration-700 ease-out group-hover:scale-105"
-            style={{ background: product.imageColor }}
-          />
+          {isGradientImage ? (
+            <div
+              className="w-full h-full transition-transform duration-700 ease-out group-hover:scale-105"
+              style={{ background: productImage }}
+            />
+          ) : (
+            <Image
+              src={productImage}
+              alt={productName}
+              fill
+              className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            />
+          )}
+
+          {/* Out of stock badge */}
+          {!product.inStock && (
+            <div className="absolute top-4 left-4 bg-[#2A2A2A]/80 text-white text-xs px-3 py-1">
+              Out of Stock
+            </div>
+          )}
 
           {/* Add to Cart Overlay Button */}
           <AnimatePresence>
-            {isHovered && (
+            {isHovered && product.inStock && (
               <motion.button
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -59,13 +90,13 @@ export function ProductCard({ product, onAddToCart, index }: ProductCardProps) {
         {/* Product Info */}
         <div className="text-center">
           <h3 className="text-[10px] uppercase tracking-[0.2em] text-[#2A2A2A]/60 mb-1">
-            {product.brand}
+            {categoryName}
           </h3>
           <h2 className="font-serif text-lg text-[#2A2A2A] mb-2 group-hover:text-[#C4A265] transition-colors duration-300">
-            {product.name}
+            {productName}
           </h2>
           <span className="text-sm font-medium text-[#2A2A2A]">
-            ${product.price.toFixed(2)}
+            {formatPrice(product.price)}
           </span>
         </div>
       </Link>

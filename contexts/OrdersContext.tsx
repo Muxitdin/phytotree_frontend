@@ -5,109 +5,208 @@ import {
   useContext,
   useState,
   useEffect,
+  useCallback,
   ReactNode,
 } from 'react';
-import { Order, OrderItem, ShippingAddress, CartItem } from '@/lib/types';
+import type {
+  Order,
+  CreateOrderDto,
+  ClickPaymentUrlResponse,
+  PaymentStatusResponse,
+  OrderStatus,
+} from '@/lib/api/types';
+import { ordersApi } from '@/lib/api/orders';
 import { useAuth } from './AuthContext';
 
 interface OrdersContextType {
   orders: Order[];
-  userOrders: Order[];
-  createOrder: (
-    items: CartItem[],
-    shippingAddress: ShippingAddress,
-    subtotal: number,
-    shipping: number,
-    total: number
-  ) => Order;
-  getOrderById: (id: string) => Order | undefined;
-  updateOrderStatus: (orderId: string, status: Order['status']) => void;
+  isLoading: boolean;
+  error: string | null;
+  hasMore: boolean;
+
+  // Order operations
+  createOrder: (data: CreateOrderDto) => Promise<Order>;
+  loadOrders: () => Promise<void>;
+  loadMore: () => Promise<void>;
+  getOrderById: (id: string) => Promise<Order | null>;
+  cancelOrder: (orderId: string) => Promise<Order>;
+
+  // Payment operations
+  getClickPaymentUrl: (orderId: string) => Promise<ClickPaymentUrlResponse>;
+  checkPaymentStatus: (orderId: string) => Promise<PaymentStatusResponse>;
+
+  // Refresh
+  refresh: () => Promise<void>;
 }
 
 const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
 
-const ORDERS_STORAGE_KEY = 'phytotree-orders';
-
-function getStoredOrders(): Order[] {
-  if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem(ORDERS_STORAGE_KEY);
-  return stored ? JSON.parse(stored) : [];
-}
-
-function saveOrders(orders: Order[]): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
-}
-
 export function OrdersProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
 
-  useEffect(() => {
-    setOrders(getStoredOrders());
-  }, []);
-
-  const userOrders = orders.filter((order) => order.userId === user?.id);
-
-  const createOrder = (
-    items: CartItem[],
-    shippingAddress: ShippingAddress,
-    subtotal: number,
-    shipping: number,
-    total: number
-  ): Order => {
-    if (!user) {
-      throw new Error('User must be authenticated to create an order');
+  // Load orders from API
+  const loadOrders = useCallback(async (cursor?: string, append: boolean = false) => {
+    if (!isAuthenticated) {
+      setOrders([]);
+      return;
     }
 
-    const orderItems: OrderItem[] = items.map((item) => ({
-      productId: item.id,
-      productName: item.name,
-      productBrand: item.brand,
-      price: item.price,
-      quantity: item.quantity,
-      imageColor: item.imageColor,
-    }));
+    try {
+      if (!append) {
+        setIsLoading(true);
+      }
+      setError(null);
 
-    const newOrder: Order = {
-      id: `order-${Date.now()}`,
-      userId: user.id,
-      items: orderItems,
-      shippingAddress,
-      subtotal,
-      shipping,
-      total,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    };
+      const response = await ordersApi.getAll({ cursor });
 
-    const updatedOrders = [newOrder, ...orders];
-    setOrders(updatedOrders);
-    saveOrders(updatedOrders);
+      if (append) {
+        setOrders(prev => [...prev, ...response.items]);
+      } else {
+        setOrders(response.items);
+      }
 
-    return newOrder;
-  };
+      setNextCursor(response.nextCursor);
+      setHasMore(response.nextCursor !== null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load orders');
+      console.error('Error fetching orders:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isAuthenticated]);
 
-  const getOrderById = (id: string): Order | undefined => {
-    return orders.find((order) => order.id === id);
-  };
+  // Initial load when user changes
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadOrders();
+    } else {
+      setOrders([]);
+      setNextCursor(null);
+      setHasMore(true);
+    }
+  }, [isAuthenticated, user?.id, loadOrders]);
 
-  const updateOrderStatus = (orderId: string, status: Order['status']): void => {
-    const updatedOrders = orders.map((order) =>
-      order.id === orderId ? { ...order, status } : order
-    );
-    setOrders(updatedOrders);
-    saveOrders(updatedOrders);
-  };
+  // Load more orders (pagination)
+  const loadMore = useCallback(async () => {
+    if (!hasMore || isLoading || !nextCursor) return;
+    await loadOrders(nextCursor, true);
+  }, [hasMore, isLoading, nextCursor, loadOrders]);
+
+  // Refresh orders
+  const refresh = useCallback(async () => {
+    setNextCursor(null);
+    await loadOrders();
+  }, [loadOrders]);
+
+  // Create order
+  const createOrder = useCallback(async (data: CreateOrderDto): Promise<Order> => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const order = await ordersApi.create(data);
+
+      // Add new order to the beginning of the list
+      setOrders(prev => [order, ...prev]);
+
+      return order;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create order';
+      setError(message);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Get order by ID
+  const getOrderById = useCallback(async (id: string): Promise<Order | null> => {
+    // First check if we have it loaded
+    const cached = orders.find(o => o.id === id);
+    if (cached) return cached;
+
+    // Fetch from API
+    try {
+      const order = await ordersApi.getOne(id);
+      return order;
+    } catch {
+      return null;
+    }
+  }, [orders]);
+
+  // Cancel order
+  const cancelOrder = useCallback(async (orderId: string): Promise<Order> => {
+    try {
+      setIsLoading(true);
+      const order = await ordersApi.cancel(orderId);
+
+      // Update order in the list
+      setOrders(prev => prev.map(o => o.id === orderId ? order : o));
+
+      return order;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to cancel order';
+      setError(message);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Get Click payment URL
+  const getClickPaymentUrl = useCallback(async (orderId: string): Promise<ClickPaymentUrlResponse> => {
+    try {
+      const response = await ordersApi.getClickPaymentUrl(orderId);
+      return response;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to get payment URL';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
+  // Check payment status
+  const checkPaymentStatus = useCallback(async (orderId: string): Promise<PaymentStatusResponse> => {
+    try {
+      const response = await ordersApi.getPaymentStatus(orderId);
+
+      // Update order in the list if payment status changed
+      if (response.isPaid) {
+        setOrders(prev => prev.map(o =>
+          o.id === orderId
+            ? { ...o, status: response.orderStatus as OrderStatus }
+            : o
+        ));
+      }
+
+      return response;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to check payment status';
+      setError(message);
+      throw err;
+    }
+  }, []);
 
   return (
     <OrdersContext.Provider
       value={{
         orders,
-        userOrders,
+        isLoading,
+        error,
+        hasMore,
         createOrder,
+        loadOrders: () => loadOrders(),
+        loadMore,
         getOrderById,
-        updateOrderStatus,
+        cancelOrder,
+        getClickPaymentUrl,
+        checkPaymentStatus,
+        refresh,
       }}
     >
       {children}

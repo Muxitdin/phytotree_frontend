@@ -1,4 +1,29 @@
-export interface Product {
+// Re-export API types
+export type {
+  User,
+  UserRole,
+  Product,
+  Category,
+  CartItem,
+  WishlistItem,
+  Order,
+  OrderItem,
+  OrderStatus,
+  PaymentStatus,
+  PaymentProvider,
+  Payment,
+} from './api/types';
+
+// Local types used by frontend components
+
+export interface PriceRange {
+  min: number | null;
+  max: number | null;
+}
+
+// Legacy types for backward compatibility (will be removed after full migration)
+
+export interface LegacyProduct {
   id: string;
   brand: string;
   name: string;
@@ -7,33 +32,8 @@ export interface Product {
   imageColor: string;
 }
 
-export interface CartItem extends Product {
+export interface LegacyCartItem extends LegacyProduct {
   quantity: number;
-}
-
-export interface PriceRange {
-  min: number | null;
-  max: number | null;
-}
-
-export type UserRole = 'user' | 'admin';
-
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-}
-
-export type OrderStatus = 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
-
-export interface OrderItem {
-  productId: string;
-  productName: string;
-  productBrand: string;
-  price: number;
-  quantity: number;
-  imageColor: string;
 }
 
 export interface ShippingAddress {
@@ -44,14 +44,23 @@ export interface ShippingAddress {
   postalCode: string;
 }
 
-export interface Order {
+export interface LegacyOrderItem {
+  productId: string;
+  productName: string;
+  productBrand: string;
+  price: number;
+  quantity: number;
+  imageColor: string;
+}
+
+export interface LegacyOrder {
   id: string;
   userId: string;
-  items: OrderItem[];
+  items: LegacyOrderItem[];
   shippingAddress: ShippingAddress;
   subtotal: number;
   shipping: number;
   total: number;
-  status: OrderStatus;
+  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   createdAt: string;
 }
