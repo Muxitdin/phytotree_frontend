@@ -66,7 +66,7 @@ export const ru = {
     redirecting: 'Перенаправление...',
     administrator: 'Администратор',
     secureLogin: 'Безопасный вход через Telegram',
-    noDataShared: 'Мы не храним ваш пароль',
+    noDataShared: 'Мы не храним никакие пароли',
   },
 
   // Cart

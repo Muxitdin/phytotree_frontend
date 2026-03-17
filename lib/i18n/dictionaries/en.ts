@@ -68,7 +68,7 @@ export const en: Dictionary = {
     redirecting: 'Redirecting...',
     administrator: 'Administrator',
     secureLogin: 'Secure login via Telegram',
-    noDataShared: 'We do not store your password',
+    noDataShared: 'We do not store any passwords',
   },
 
   // Cart

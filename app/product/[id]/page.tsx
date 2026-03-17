@@ -9,6 +9,7 @@ import { useProducts } from '@/contexts/ProductsContext';
 import { useCart } from '@/contexts/CartContext';
 import { useI18n } from '@/contexts/I18nContext';
 import { Navbar, Footer } from '@/components/layout';
+import { CartDrawer } from '@/components/cart';
 import type { Product } from '@/lib/api/types';
 import {
   getProductName,
@@ -27,7 +28,17 @@ interface ProductPageProps {
 export default function ProductPage({ params }: ProductPageProps) {
   const { id } = use(params);
   const { getProductBySlug, products } = useProducts();
-  const { addToCart, cartItemCount } = useCart();
+  const {
+    cartItems,
+    addToCart,
+    updateQuantity,
+    removeItem,
+    cartItemCount,
+    subtotal,
+    shipping,
+    total,
+    syncCart,
+  } = useCart();
   const { t, locale } = useI18n();
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -49,14 +60,30 @@ export default function ProductPage({ params }: ProductPageProps) {
     loadProduct();
   }, [id, getProductBySlug]);
 
+  // Open cart drawer and sync cart data
+  const handleOpenCart = () => {
+    setIsCartOpen(true);
+    syncCart();
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex flex-col">
-        <Navbar cartItemCount={cartItemCount} onCartClick={() => setIsCartOpen(true)} />
+        <Navbar cartItemCount={cartItemCount} onCartClick={handleOpenCart} />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="animate-spin text-[#C4A265]" size={32} />
         </div>
         <Footer />
+        <CartDrawer
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          cartItems={cartItems}
+          onUpdateQuantity={updateQuantity}
+          onRemoveItem={removeItem}
+          subtotal={subtotal}
+          shipping={shipping}
+          total={total}
+        />
       </div>
     );
   }
@@ -64,7 +91,7 @@ export default function ProductPage({ params }: ProductPageProps) {
   if (!product) {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex flex-col">
-        <Navbar cartItemCount={cartItemCount} onCartClick={() => setIsCartOpen(true)} />
+        <Navbar cartItemCount={cartItemCount} onCartClick={handleOpenCart} />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <h1 className="font-serif text-2xl text-[#2A2A2A] mb-4">{t.product.notFound}</h1>
@@ -77,6 +104,16 @@ export default function ProductPage({ params }: ProductPageProps) {
           </div>
         </div>
         <Footer />
+        <CartDrawer
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          cartItems={cartItems}
+          onUpdateQuantity={updateQuantity}
+          onRemoveItem={removeItem}
+          subtotal={subtotal}
+          shipping={shipping}
+          total={total}
+        />
       </div>
     );
   }
@@ -115,7 +152,7 @@ export default function ProductPage({ params }: ProductPageProps) {
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
-      <Navbar cartItemCount={cartItemCount} onCartClick={() => setIsCartOpen(true)} />
+      <Navbar cartItemCount={cartItemCount} onCartClick={handleOpenCart} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Breadcrumb */}
@@ -418,6 +455,17 @@ export default function ProductPage({ params }: ProductPageProps) {
       </main>
 
       <Footer />
+
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cartItems={cartItems}
+        onUpdateQuantity={updateQuantity}
+        onRemoveItem={removeItem}
+        subtotal={subtotal}
+        shipping={shipping}
+        total={total}
+      />
     </div>
   );
 }

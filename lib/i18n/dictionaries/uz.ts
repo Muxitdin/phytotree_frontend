@@ -68,7 +68,7 @@ export const uz: Dictionary = {
     redirecting: 'Yo\'naltirilmoqda...',
     administrator: 'Administrator',
     secureLogin: 'Telegram orqali xavfsiz kirish',
-    noDataShared: 'Biz parolingizni saqlamaymiz',
+    noDataShared: 'Biz hech qanday parol saqlamaymiz',
   },
 
   // Cart
