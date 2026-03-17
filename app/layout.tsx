@@ -23,6 +23,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Phytotree - Luxury Beauty Essentials",
   description: "Discover curated luxury beauty products designed to enhance your natural glow",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 export default function RootLayout({
