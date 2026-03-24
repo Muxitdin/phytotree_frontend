@@ -43,6 +43,7 @@ interface ProductFormData {
   categoryId: string;
   images: string[];
   inStock: boolean;
+  quantity: number,
 }
 
 interface CategoryFormData {
@@ -65,6 +66,7 @@ const DEFAULT_PRODUCT_FORM: ProductFormData = {
   categoryId: '',
   images: [],
   inStock: true,
+  quantity: 1,
 };
 
 const DEFAULT_CATEGORY_FORM: CategoryFormData = {
@@ -153,6 +155,7 @@ export default function AdminPage() {
         categoryId: productFormData.categoryId,
         images: productFormData.images,
         inStock: productFormData.inStock,
+        quantity: productFormData.inStock ? productFormData.quantity : 0,
       };
 
       if (editingProduct) {
@@ -192,6 +195,7 @@ export default function AdminPage() {
       categoryId: product.categoryId,
       images: product.images || [],
       inStock: product.inStock,
+      quantity: product.quantity,
     });
     setIsProductModalOpen(true);
   };
@@ -725,6 +729,23 @@ export default function AdminPage() {
                   </label>
                 </div>
 
+                {productFormData.inStock &&
+                    <div>
+                      <label className="block text-xs uppercase tracking-wider text-[#2A2A2A]/60 mb-2">
+                        {t.common.quantity}
+                      </label>
+                      <input
+                          type="number"
+                          required
+                          min="1"
+                          step="1"
+                          value={productFormData.quantity}
+                          onChange={(e) => setProductFormData({ ...productFormData, quantity: Number(e.target.value) })}
+                          className="w-full p-3 border border-[#2A2A2A]/20 focus:border-[#C4A265] outline-none transition-colors"
+                      />
+                    </div>
+                }
+
                 {/* Image Upload */}
                 <div>
                   <label className="block text-xs uppercase tracking-wider text-[#2A2A2A]/60 mb-2">
@@ -788,7 +809,7 @@ export default function AdminPage() {
 
                   {productFormData.images.length === 0 && (
                     <p className="text-sm text-[#2A2A2A]/40">
-                      No images uploaded. Click "Upload Image" to add product images.
+                      No images uploaded. Click &#34;Upload Image&#34; to add product images.
                     </p>
                   )}
                 </div>

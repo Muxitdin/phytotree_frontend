@@ -65,6 +65,7 @@ export interface Product {
   price: string; // Decimal as string
   images: string[];
   inStock: boolean;
+  quantity: number;
   createdAt: string;
   updatedAt: string;
 }
